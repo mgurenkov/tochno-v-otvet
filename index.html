@@ -30,47 +30,53 @@
   .next{position:fixed;left:14px;right:14px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:calc(100% - 28px);min-height:52px;max-height:40dvh;overflow:auto;margin:0;padding:15px 20px;z-index:40;border:2px solid #fff;box-shadow:0 4px 24px #23274145;font-size:16px}
   .restart{grid-column:auto}
 }
+.board.quotient{grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.board.quotient .target{font-size:clamp(17px,3.8vw,25px)}.remainder-line{display:block;font-size:.48em;letter-spacing:0;line-height:1.4;margin-top:6px}.change-answer{border:0;background:none;text-decoration:underline;text-underline-offset:3px;padding:8px 0;margin-bottom:8px;font-size:14px;cursor:pointer}.mode-switch{flex-wrap:wrap}@media(max-width:480px){.mode-switch button{font-size:14px;padding:10px 6px}.equation.with-remainder{font-size:36px}.board.quotient{gap:4px}}
 </style>
 </head>
 <body>
 <header><div class="brand"><span class="brand-mark" aria-hidden="true">◎</span>Точно в ответ!</div><button class="sound" id="sound" aria-pressed="false">Звук: выкл.</button></header>
 <main>
-<div class="mode-switch" role="group" aria-label="Вид примеров"><button id="multiply" aria-pressed="true">× Умножение</button><button id="divide" aria-pressed="false">÷ Деление</button></div>
+<div class="mode-switch" role="group" aria-label="Вид примеров"><button id="multiply" aria-pressed="true">× Умножение</button><button id="divide" aria-pressed="false">÷ Деление</button><button id="remainder" aria-pressed="false">С остатком</button></div>
 <div class="topline"><span class="eyebrow" id="modeLabel">Таблица умножения · 3–9</span><div><span class="round" id="round">Вопрос 1 из 10</span><div class="progress" id="progress" aria-hidden="true"></div></div></div>
 <section class="question" aria-label="Пример"><div><small id="questionLabel">Сколько будет?</small><div class="equation" id="equation" aria-live="polite">7 × 8 = <b>?</b></div></div><div class="question-note"><strong>Прицелься. Подумай.</strong>Нажми на правильный ответ в мишени.</div></section>
-<div class="play"><section class="board-shell"><div class="board-top"><strong>Твоя мишень</strong><span id="boardSize">10 × 10</span></div><div class="board" id="board" role="group" aria-label="Мишень: ответы от 1 до 100"></div><p class="board-hint">Нажми на число с правильным ответом</p></section>
+<div class="play"><section class="board-shell"><div class="board-top"><strong id="boardTitle">Твоя мишень</strong><span id="boardSize">10 × 10</span></div><button class="change-answer" id="changeAnswer" hidden>Изменить целую часть</button><div class="board" id="board" role="group" aria-label="Мишень: ответы от 1 до 100"></div><p class="board-hint" id="boardHint">Нажми на число с правильным ответом</p></section>
 <aside class="sidebar"><div class="stats"><div class="stat"><b id="hits">0</b><span>Попадания</span></div><div class="stat"><b id="misses">0</b><span>Промахи</span></div></div><section class="reaction" id="reaction"><div role="status" aria-live="polite" aria-atomic="true"><span class="face" id="face" aria-hidden="true">😎</span><h1 id="message">Ну что, снайпер?</h1><p id="detail">Найди ответ. Один точный выстрел — и победа!</p></div><button class="next" id="next" hidden>Следующий пример</button></section><button class="restart" id="restart">Начать заново</button></aside></div>
 <p class="footer">Не спеши. Меткость приходит с практикой.</p>
 </main><div class="confetti" id="confetti" aria-hidden="true"></div>
 <script>
 (()=>{
 'use strict';
-const $=id=>document.getElementById(id);const board=$('board');let mode='multiply',deck=[],index=0,hits=0,misses=0,solved=false,finished=false,sound=false,audio=null,partyTimer;
+const $=id=>document.getElementById(id);const board=$('board');let mode='multiply',stage='quotient',selectedQuotient=null,deck=[],index=0,hits=0,misses=0,solved=false,finished=false,sound=false,audio=null,partyTimer;
 const cells=[];
 function buildBoard(){
   cells.length=0;board.replaceChildren();
-  const division=mode==='divide',first=division?2:1,last=division?9:100,columns=division?4:10;
-  board.className=division?'board divide':'board';
-  board.setAttribute('aria-label',division?'Мишень: ответы от 2 до 9':'Мишень: ответы от 1 до 100');
-  $('boardSize').textContent=division?'8 ответов · 2–9':'10 × 10';
+  const division=mode==='divide',withRest=mode==='remainder';const [first,last]=answerRange(),columns=withRest?(stage==='quotient'?7:4):division?4:10;
+  board.className=withRest?(stage==='quotient'?'board quotient':'board divide'):division?'board divide':'board';
+  board.setAttribute('aria-label',(withRest?(stage==='quotient'?'Целая часть':'Остаток'):'Мишень')+': ответы от '+first+' до '+last);
+  $('boardSize').textContent=withRest?'От '+first+' до '+last:division?'8 ответов · 2–9':'10 × 10';$('boardTitle').textContent=withRest?(stage==='quotient'?'1. Выбери целую часть':'2. Выбери остаток'):'Твоя мишень';$('boardHint').textContent=withRest?(stage==='quotient'?'Сколько целых раз делитель помещается в числе?':'Остаток должен быть меньше делителя.'):'Нажми на число с правильным ответом';$('changeAnswer').hidden=!withRest||stage!=='remainder'||solved;
   for(let n=first;n<=last;n++){
     const b=document.createElement('button'),row=Math.floor((n-1)/10),col=(n-1)%10,d=Math.max(Math.abs(row-4.5),Math.abs(col-4.5));
-    b.className=division?'target band2':'target'+(d<1?' band3':d<3?' band2':d<4?' band1':'');
-    b.textContent=n;b.setAttribute('aria-label','Выстрелить в '+n);
+    b.className=division||withRest?'target band2':'target'+(d<1?' band3':d<3?' band2':d<4?' band1':'');
+    b.textContent=n;b.setAttribute('aria-label','Выбрать '+n);
     b.addEventListener('click',e=>fire(n,e));
-    b.addEventListener('keydown',e=>{const steps={ArrowRight:1,ArrowLeft:-1,ArrowDown:columns,ArrowUp:-columns};if(steps[e.key]){e.preventDefault();const target=Math.max(first,Math.min(last,n+steps[e.key]));cells[target-1].focus()}});
-    cells[n-1]=b;board.append(b);
+    b.addEventListener('keydown',e=>{const steps={ArrowRight:1,ArrowLeft:-1,ArrowDown:columns,ArrowUp:-columns};if(steps[e.key]){e.preventDefault();const target=Math.max(first,Math.min(last,n+steps[e.key]));cells[target].focus()}});
+    cells[n]=b;board.append(b);
   }
 }
-function markShot(n){const r=cells[n-1].getBoundingClientRect(),mark=document.createElement('div');mark.className='shot';mark.setAttribute('aria-hidden','true');mark.style.left=(r.left+r.width/2)+'px';mark.style.top=(r.top+r.height/2)+'px';document.body.append(mark);setTimeout(()=>mark.remove(),450)}
+function markShot(n){const r=cells[n].getBoundingClientRect(),mark=document.createElement('div');mark.className='shot';mark.setAttribute('aria-hidden','true');mark.style.left=(r.left+r.width/2)+'px';mark.style.top=(r.top+r.height/2)+'px';document.body.append(mark);setTimeout(()=>mark.remove(),450)}
 function shuffle(list){for(let i=list.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[list[i],list[j]]=[list[j],list[i]]}return list}
 function reaction(kind,face,title,detail){$('reaction').className='reaction '+kind;$('face').textContent=face;$('message').textContent=title;$('detail').textContent=detail}
-function problem(){const [a,b]=deck[index];return mode==='divide'?{text:(a*b)+' ÷ '+b,answer:a}:{text:a+' × '+b,answer:a*b}}
-function setMode(value){if(!['multiply','divide'].includes(value))throw new Error('Неизвестный вид примеров.');if(mode!==value){mode=value;reset()}return status()}
-function status(){return {mode,answerRange:mode==='divide'?[2,9]:[1,100],question:finished?null:problem().text,round:index+1,hits,misses,solved,finished}}
-function show(){$('equation').style.fontSize='';solved=false;finished=false;$('round').textContent='Вопрос '+(index+1)+' из 10';$('questionLabel').textContent='Сколько будет?';$('equation').innerHTML=problem().text+' = <b>?</b>';$('progress').replaceChildren(...Array.from({length:10},(_,i)=>{let s=document.createElement('span');s.className=i<index?'done':i===index?'active':'';return s}));cells.forEach(b=>{b.disabled=false;b.classList.remove('hit','miss')});$('next').hidden=true;reaction('','😎','Твой ход!','Найди правильный ответ и попади точно в цель.')}
-function reset(){$('multiply').setAttribute('aria-pressed',String(mode==='multiply'));$('divide').setAttribute('aria-pressed',String(mode==='divide'));$('modeLabel').textContent=mode==='divide'?'Деление без остатка':'Таблица умножения · 3–9';buildBoard();const hard=[],other=[];
-if(mode==='divide'){
+function problem(){const [a,b]=deck[index];if(mode==='remainder')return {text:a+' ÷ '+b,answer:Math.floor(a/b),remainder:a%b,divisor:b};return mode==='divide'?{text:(a*b)+' ÷ '+b,answer:a}:{text:a+' × '+b,answer:a*b}}
+function setMode(value){if(!['multiply','divide','remainder'].includes(value))throw new Error('Неизвестный вид примеров.');if(mode!==value){mode=value;reset()}return status()}
+function answerRange(){return mode==='remainder'?(stage==='quotient'?[1,49]:[0,problem().divisor-1]):mode==='divide'?[2,9]:[1,100]}
+function paintEquation(answer='?',rest='?'){$('equation').classList.toggle('with-remainder',mode==='remainder');$('equation').innerHTML=problem().text+' = <b>'+answer+'</b>'+(mode==='remainder'?'<span class="remainder-line">остаток <b>'+rest+'</b></span>':'')}
+function status(){return {mode,stage:mode==='remainder'?stage:null,selectedQuotient,answerRange:answerRange(),question:finished?null:problem().text,round:index+1,hits,misses,solved,finished}}
+function show(){$('equation').style.fontSize='';solved=false;finished=false;stage='quotient';selectedQuotient=null;buildBoard();$('round').textContent='Вопрос '+(index+1)+' из 10';$('questionLabel').textContent='Сколько будет?';paintEquation();$('progress').replaceChildren(...Array.from({length:10},(_,i)=>{let s=document.createElement('span');s.className=i<index?'done':i===index?'active':'';return s}));cells.forEach(b=>{b.disabled=false;b.classList.remove('hit','miss')});$('next').hidden=true;reaction('','😎','Твой ход!','Найди правильный ответ и попади точно в цель.')}
+function reset(){$('multiply').setAttribute('aria-pressed',String(mode==='multiply'));$('divide').setAttribute('aria-pressed',String(mode==='divide'));$('remainder').setAttribute('aria-pressed',String(mode==='remainder'));$('modeLabel').textContent=mode==='remainder'?'Двузначное ÷ однозначное':mode==='divide'?'Деление без остатка':'Таблица умножения · 3–9';const hard=[],other=[];
+if(mode==='remainder'){
+  for(let a=10;a<=99;a++)for(let b=2;b<=9;b++)if(a%b!==0)(Math.floor(a/b)>=10?hard:other).push([a,b]);
+  deck=shuffle([...shuffle(hard).slice(0,6),...shuffle(other).slice(0,4)]);
+}else if(mode==='divide'){
   for(let a=2;a<=9;a++)for(let b=3;b<=9;b++)(a>=6&&b>=6?hard:other).push([a,b]);
   deck=shuffle([...shuffle(hard).slice(0,6),...shuffle(other).slice(0,4)]);
 }else{
@@ -79,12 +85,39 @@ if(mode==='divide'){
 }index=0;hits=0;misses=0;$('hits').textContent=0;$('misses').textContent=0;clearTimeout(partyTimer);$('confetti').replaceChildren();show();reaction('','😎','Ну что, снайпер?','Найди ответ. Один точный выстрел — и победа!')}
 function tone(good){if(!sound)return;try{audio??=new(window.AudioContext||window.webkitAudioContext)();audio.resume().catch(()=>{});const start=audio.currentTime;const notes=good?[523.25,659.25,783.99,1046.5]:[330,277,220,146.8];notes.forEach((freq,i)=>{const osc=audio.createOscillator(),gain=audio.createGain();osc.type=good?'sine':'triangle';osc.frequency.value=freq;gain.gain.setValueAtTime(0,start+i*.1);gain.gain.linearRampToValueAtTime(.1,start+i*.1+.02);gain.gain.exponentialRampToValueAtTime(.001,start+i*.1+.22);osc.connect(gain);gain.connect(audio.destination);osc.start(start+i*.1);osc.stop(start+i*.1+.25)})}catch{sound=false;$('sound').textContent='Звук недоступен';$('sound').setAttribute('aria-pressed','false')}}
 function party(){clearTimeout(partyTimer);$('confetti').innerHTML=Array.from({length:45},()=>'<i style="--x:'+Math.random()*100+'%;--c:'+['#d0f55b','#657fee','#f4647a','#232741'][Math.floor(Math.random()*4)]+';--d:'+Math.random()*.4+'s;--r:'+Math.random()*360+'deg"></i>').join('');partyTimer=setTimeout(()=>$('confetti').replaceChildren(),2300)}
-function fire(n,event){const first=mode==='divide'?2:1,last=mode==='divide'?9:100;if(!Number.isInteger(n)||n<first||n>last)throw new Error('Ответ должен быть целым числом от '+first+' до '+last+'.');if(solved||finished)return {...status(),accepted:false};if(cells[n-1].disabled)return {...status(),accepted:false};markShot(n);const current=problem();if(n===current.answer){solved=true;hits++;$('hits').textContent=hits;cells.forEach(b=>b.disabled=true);cells[n-1].classList.add('hit');$('equation').innerHTML=current.text+' = <b>'+n+'</b>';reaction('happy','🤩','В яблочко!',[ 'Вот это точность! Так держать!','Ура-а-а! Прямо в десятку!','Есть попадание! Ты в ударе!'][index%3]);tone(true);party();$('next').hidden=false;$('next').textContent=index===9?'Посмотреть результат':'Следующий пример';$('next').focus({preventScroll:true})}else{misses++;$('misses').textContent=misses;cells[n-1].classList.add('miss');cells[n-1].disabled=true;reaction('sad','😭','НЕ-Е-ЕТ!','Мимо-о-о… '+current.text+' — не '+n+'. Соберись, попробуй ещё!');$('reaction').classList.remove('shake');void $('reaction').offsetWidth;$('reaction').classList.add('shake');tone(false);$('reaction').scrollIntoView({block:'nearest',behavior:'smooth'})}return {...status(),accepted:true,correct:n===current.answer}}
+function fire(n,event){
+  const [first,last]=answerRange();
+  if(!Number.isInteger(n)||n<first||n>last)throw new Error('Ответ должен быть целым числом от '+first+' до '+last+'.');
+  if(solved||finished||cells[n].disabled)return {...status(),accepted:false};
+  markShot(n);const current=problem();
+  if(mode==='remainder'&&stage==='quotient'){
+    selectedQuotient=n;stage='remainder';buildBoard();paintEquation(n);
+    reaction('','🤔','А какой остаток?','Целая часть: '+n+'. Теперь выбери остаток.');
+    revealQuestion();return {...status(),accepted:true,complete:false};
+  }
+  const correct=mode==='remainder'?selectedQuotient===current.answer&&n===current.remainder:n===current.answer;
+  if(correct){
+    solved=true;hits++;$('hits').textContent=hits;cells.forEach(b=>b.disabled=true);cells[n].classList.add('hit');
+    paintEquation(mode==='remainder'?selectedQuotient:n,n);$('changeAnswer').hidden=true;
+    reaction('happy','🤩','В яблочко!',mode==='remainder'?deck[index][0]+' = '+deck[index][1]+' × '+selectedQuotient+' + '+n:[ 'Вот это точность! Так держать!','Ура-а-а! Прямо в десятку!','Есть попадание! Ты в ударе!'][index%3]);
+    tone(true);party();$('next').hidden=false;$('next').textContent=index===9?'Посмотреть результат':'Следующий пример';$('next').focus({preventScroll:true});
+  }else{
+    misses++;$('misses').textContent=misses;
+    const attempt=mode==='remainder'?selectedQuotient+', остаток '+n:String(n);
+    if(mode==='remainder'){stage='quotient';selectedQuotient=null;buildBoard();paintEquation()}
+    else{cells[n].classList.add('miss');cells[n].disabled=true}
+    reaction('sad','😭','НЕ-Е-ЕТ!','Мимо-о-о… '+current.text+' — не '+attempt+'. Попробуй ещё!');
+    $('reaction').classList.remove('shake');void $('reaction').offsetWidth;$('reaction').classList.add('shake');tone(false);
+    if(mode==='remainder')revealQuestion();else $('reaction').scrollIntoView({block:'nearest',behavior:'smooth'});
+  }
+  return {...status(),accepted:true,complete:true,correct};
+}
 function revealQuestion(){if(window.matchMedia('(max-width:750px)').matches)window.scrollTo({top:0,behavior:'instant'})}
-function next(){if(finished){reset();revealQuestion();return status()}if(!solved)return {...status(),accepted:false};if(index<9){index++;show();cells[mode==='divide'?1:0].focus({preventScroll:true});revealQuestion()}else{finished=true;const needsPractice=misses>=6;$('questionLabel').textContent='Все 10 примеров решены!';$('equation').innerHTML=needsPractice?'Раунд <b>завершён</b>':'Отличная <b>игра!</b>';$('equation').style.fontSize='clamp(28px,5vw,60px)';$('round').textContent='Раунд завершён';$('progress').querySelectorAll('span').forEach(s=>s.className='done');reaction(needsPractice?'sad':'happy',needsPractice?'😔':'🏆',needsPractice?'Ты не очень хорошо сыграл':misses===0?'Без единого промаха!':'Мишень покорена!','10 попаданий · '+misses+' '+(misses%10===1&&misses%100!==11?'промах':misses%10>=2&&misses%10<=4&&!(misses%100>=12&&misses%100<=14)?'промаха':'промахов')+'. '+(needsPractice?'Стоит ещё потренироваться.':misses===0?'Идеальная меткость!':'Каждый пример — шаг вперёд.'));$('next').textContent='Играть ещё';if(needsPractice){clearTimeout(partyTimer);$('confetti').replaceChildren();tone(false)}else{party();tone(true)}}return status()}
+function next(){if(finished){reset();revealQuestion();return status()}if(!solved)return {...status(),accepted:false};if(index<9){index++;show();cells[answerRange()[0]].focus({preventScroll:true});revealQuestion()}else{finished=true;const needsPractice=misses>=6;$('questionLabel').textContent='Все 10 примеров решены!';$('equation').innerHTML=needsPractice?'Раунд <b>завершён</b>':'Отличная <b>игра!</b>';$('equation').style.fontSize='clamp(28px,5vw,60px)';$('round').textContent='Раунд завершён';$('progress').querySelectorAll('span').forEach(s=>s.className='done');reaction(needsPractice?'sad':'happy',needsPractice?'😔':'🏆',needsPractice?'Ты не очень хорошо сыграл':misses===0?'Без единого промаха!':'Мишень покорена!','10 попаданий · '+misses+' '+(misses%10===1&&misses%100!==11?'промах':misses%10>=2&&misses%10<=4&&!(misses%100>=12&&misses%100<=14)?'промаха':'промахов')+'. '+(needsPractice?'Стоит ещё потренироваться.':misses===0?'Идеальная меткость!':'Каждый пример — шаг вперёд.'));$('next').textContent='Играть ещё';if(needsPractice){clearTimeout(partyTimer);$('confetti').replaceChildren();tone(false)}else{party();tone(true)}}return status()}
+$('remainder').addEventListener('click',()=>setMode('remainder'));$('changeAnswer').addEventListener('click',()=>{if(solved||finished)return;stage='quotient';selectedQuotient=null;buildBoard();paintEquation();reaction('','🤔','Выбери целую часть','Затем выбери остаток.');revealQuestion()});
 $('multiply').addEventListener('click',()=>setMode('multiply'));$('divide').addEventListener('click',()=>setMode('divide'));
 $('next').addEventListener('click',()=>{next();if(!finished)$('equation').style.fontSize=''});$('restart').addEventListener('click',()=>{reset();$('equation').style.fontSize=''});$('sound').addEventListener('click',()=>{sound=!sound;$('sound').textContent='Звук: '+(sound?'вкл.':'выкл.');$('sound').setAttribute('aria-pressed',String(sound));if(sound)tone(true)});reset();
-const ctx=document.modelContext;if(ctx?.registerTool){for(const t of [{name:'set_game_mode',description:'Выбрать умножение или деление. При смене режима начинается новый раунд со сбросом счёта.',inputSchema:{type:'object',properties:{mode:{type:'string',enum:['multiply','divide']}},required:['mode'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>setMode(input?.mode)},{name:'read_game',description:'Прочитать текущий пример и счёт игры.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:()=>status()},{name:'shoot_answer',description:'Выбрать ответ на мишени: от 2 до 9 при делении, от 1 до 100 при умножении. Правильный ответ завершает текущий пример.',inputSchema:{type:'object',properties:{answer:{type:'integer',minimum:1,maximum:100}},required:['answer'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>fire(input?.answer)},{name:'next_question',description:'После правильного ответа перейти к следующему примеру или результату. На экране результата начинает новую игру.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false},execute:()=>next()}]){try{Promise.resolve(ctx.registerTool(t)).catch(()=>{})}catch{}}}
+const ctx=document.modelContext;if(ctx?.registerTool){for(const t of [{name:'set_game_mode',description:'Выбрать умножение, деление без остатка или деление с остатком. При смене режима начинается новый раунд со сбросом счёта.',inputSchema:{type:'object',properties:{mode:{type:'string',enum:['multiply','divide','remainder']}},required:['mode'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>setMode(input?.mode)},{name:'read_game',description:'Прочитать текущий пример и счёт игры.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:()=>status()},{name:'shoot_answer',description:'Выбрать число на мишени в текущем answerRange. В режиме remainder сначала выбирается целая часть (1–49), затем остаток (0–делитель минус 1). Счёт меняется только после выбора остатка; после ошибки снова выбирается целая часть.',inputSchema:{type:'object',properties:{answer:{type:'integer',minimum:0,maximum:100}},required:['answer'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>fire(input?.answer)},{name:'next_question',description:'После правильного ответа перейти к следующему примеру или результату. На экране результата начинает новую игру.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false},execute:()=>next()}]){try{Promise.resolve(ctx.registerTool(t)).catch(()=>{})}catch{}}}
 })();
 </script>
 </body></html>
